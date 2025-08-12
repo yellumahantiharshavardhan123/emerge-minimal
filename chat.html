@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>E-MESG 1-to-1 Chat</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f9f9f9; }
+    #chat-container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 8px; }
+    #friend-email { width: 70%; padding: 8px; }
+    #select-friend-btn { padding: 8px 16px; }
+    #messages { border: 1px solid #ddd; height: 300px; overflow-y: auto; padding: 10px; margin-top: 10px; background: #fff; }
+    #new-message { width: 80%; padding: 10px; margin-top: 10px; }
+    #send-btn { padding: 10px 16px; margin-left: 10px; }
+    .message { margin-bottom: 10px; }
+    .message.you { text-align: right; }
+    .message .text { display: inline-block; padding: 8px 12px; border-radius: 15px; background: #007bff; color: white; max-width: 70%; }
+    .message.you .text { background: #28a745; }
+    #logout-btn { float: right; background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+    #user-info { margin-bottom: 15px; }
+  </style>
+</head>
+<body>
+  <div id="chat-container">
+    <div id="user-info">
+      Logged in as: <span id="user-email"></span>
+      <button id="logout-btn">Logout</button>
+    </div>
+
+    <input type="email" id="friend-email" placeholder="Enter friend's email to chat" />
+    <button id="select-friend-btn">Start Chat</button>
+
+    <div id="messages"></div>
+
+    <input type="text" id="new-message" placeholder="Type your message..." disabled />
+    <button id="send-btn" disabled>Send</button>
+  </div>
+
+<script>
+  const SUPABASE_URL = "https://noqmpozmglkiprkakeab.supabase.co";
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vcW1wb3ptZ2xraXBya2FrZWFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5ODExNzksImV4cCI6MjA3MDU1NzE3OX0.rrwRu_BKxXQJE-X49ItQE5s8Q_vNaUiZz1-0wO_tEAY";
+
+  const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  let currentUser = null;
+  let chatFriend = null;
+  let messagesSubscription = null;
+
+  // Show logged-in user email
+  async function getUser() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      alert("You must log in first");
+      window.location.href = "index.html";
+      return;
+    }
+    currentUser = user;
+    document.getElementById("user-email").innerText = currentUser.email;
+  }
+
+  // Logout
+  document.getElementById("logout-btn").addEventListener("click", async () => {
+    await supabase.auth.signOut();
+    window.location.href = "index.html";
+  });
+
+  // Start chat button click
+  document.getElementById("select-friend-btn").addEventListener("click", async () => {
+    const friendEmail = document.getElementById("friend-email").value.trim().toLowerCase();
+    if (!friendEmail) {
+      alert("Please enter your friend's email");
+      return;
+    }
+    if (friendEmail === currentUser.email) {
+      alert("You cannot chat with yourself!");
+      return;
+    }
+    // Get friend's user id
+    const { data, error } = await supabase
+      .from('users')
+      .select('id,email')
+      .eq('email', friendEmail)
+      .single();
+
+    if (error || !data) {
+      alert("User not found");
+      return;
+    }
+    chatFriend = data;
+
+    // Enable message input and send button
+    document.getElementById("new-message").disabled = false;
+    document.getElementById("send-btn").disabled = false;
+
+    // Clear previous messages
+    document.getElementById("messages").innerHTML = "";
+
+    // Subscribe to messages between currentUser and chatFriend
+    if (messagesSubscription) {
+      messagesSubscription.unsubscribe();
+    }
+    subscribeToMessages();
+    loadMessages();
+  });
+
+  // Load previous messages
+  async function loadMessages() {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .or(
+        `and(sender_id.eq.${currentUser.id},receiver_id.eq.${chatFriend.id}),and(sender_id.eq.${chatFriend.id},receiver_id.eq.${currentUser.id})`
+      )
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      alert("Error loading messages: " + error.message);
+      return;
+    }
+    const messagesDiv = document.getElementById("messages");
+    messagesDiv.innerHTML = "";
+    data.forEach(msg => {
+      addMessageToDOM(msg);
+    });
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }
+
+  // Subscribe to new messages realtime
+  function subscribeToMessages() {
+    messagesSubscription = supabase
+      .channel('public:messages')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        payload => {
+          const msg = payload.new;
+          if (
+            (msg.sender_id === currentUser.id && msg.receiver_id === chatFriend.id) ||
+            (msg.sender_id === chatFriend.id && msg.receiver_id === currentUser.id)
+          ) {
+            addMessageToDOM(msg);
+          }
+        }
+      )
+      .subscribe();
+  }
+
+  // Add a message to DOM
+  function addMessageToDOM(msg) {
+    const messagesDiv = document.getElementById("messages");
+    const div = document.createElement("div");
+    div.classList.add("message");
+    if (msg.sender_id === currentUser.id) {
+      div.classList.add("you");
+    }
+    const textDiv = document.createElement("div");
+    textDiv.classList.add("text");
+    textDiv.textContent = msg.content;
+    div.appendChild(textDiv);
+    messagesDiv.appendChild(div);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }
+
+  // Send message button
+  document.getElementById("send-btn").addEventListener("click", async () => {
+    const content = document.getElementById("new-message").value.trim();
+    if (!content) return;
+    const { error } = await supabase.from('messages').insert([{
+      sender_id: currentUser.id,
+      receiver_id: chatFriend.id,
+      content
+    }]);
+    if (error) {
+      alert("Error sending message: " + error.message);
+    } else {
+      document.getElementById("new-message").value = "";
+    }
+  });
+
+  // Check user on page load
+  window.onload = getUser;
+</script>
+</body>
+</html>
