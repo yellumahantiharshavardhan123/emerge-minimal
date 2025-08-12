@@ -10,6 +10,7 @@
     input { padding: 10px; margin: 5px; width: 250px; }
     button { padding: 10px 20px; background: black; color: white; border: none; cursor: pointer; }
     .box { background: white; padding: 20px; border-radius: 10px; display: inline-block; }
+    #msg { margin-top: 15px; color: green; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -25,23 +26,45 @@
   <p id="msg"></p>
 
 <script>
-  // TODO: Replace with your Supabase Project details
-  const SUPABASE_URL = "YOUR_SUPABASE_PROJECT_URL";
-  const SUPABASE_KEY = "YOUR_SUPABASE_ANON_KEY";
+  const SUPABASE_URL = "https://noqmpozmglkiprkakeab.supabase.co";
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vcW1wb3ptZ2xraXBya2FrZWFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5ODExNzksImV4cCI6MjA3MDU1NzE3OX0.rrwRu_BKxXQJE-X49ItQE5s8Q_vNaUiZz1-0wO_tEAY";
   const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
   async function signup() {
     const email = document.getElementById("email").value;
     const password = document.getElementById("password").value;
+    if (!email || !password) {
+      showMessage("Please enter email and password", true);
+      return;
+    }
     const { data, error } = await supabase.auth.signUp({ email, password });
-    document.getElementById("msg").innerText = error ? error.message : "✅ Signup successful! Check your email.";
+    if (error) {
+      showMessage("Signup error: " + error.message, true);
+    } else {
+      showMessage("✅ Signup successful! Check your email for confirmation.");
+    }
   }
 
   async function login() {
     const email = document.getElementById("email").value;
     const password = document.getElementById("password").value;
+    if (!email || !password) {
+      showMessage("Please enter email and password", true);
+      return;
+    }
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    document.getElementById("msg").innerText = error ? error.message : "✅ Logged in!";
+    if (error) {
+      showMessage("Login error: " + error.message, true);
+    } else {
+      showMessage("✅ Logged in successfully!");
+      // Redirect or load chat page here
+    }
+  }
+
+  function showMessage(msg, isError = false) {
+    const msgElem = document.getElementById("msg");
+    msgElem.style.color = isError ? "red" : "green";
+    msgElem.innerText = msg;
   }
 </script>
 </body>
