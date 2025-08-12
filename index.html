@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>E-MESG Minimal Auth</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; text-align: center; padding: 20px; }
+    input { padding: 10px; margin: 5px; width: 250px; }
+    button { padding: 10px 20px; background: black; color: white; border: none; cursor: pointer; }
+    .box { background: white; padding: 20px; border-radius: 10px; display: inline-block; }
+  </style>
+</head>
+<body>
+  <h2>🔐 E-MESG Login / Signup</h2>
+  
+  <div class="box">
+    <input type="email" id="email" placeholder="Email" /><br>
+    <input type="password" id="password" placeholder="Password" /><br>
+    <button onclick="signup()">Sign Up</button>
+    <button onclick="login()">Log In</button>
+  </div>
+
+  <p id="msg"></p>
+
+<script>
+  // TODO: Replace with your Supabase Project details
+  const SUPABASE_URL = "YOUR_SUPABASE_PROJECT_URL";
+  const SUPABASE_KEY = "YOUR_SUPABASE_ANON_KEY";
+  const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  async function signup() {
+    const email = document.getElementById("email").value;
+    const password = document.getElementById("password").value;
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    document.getElementById("msg").innerText = error ? error.message : "✅ Signup successful! Check your email.";
+  }
+
+  async function login() {
+    const email = document.getElementById("email").value;
+    const password = document.getElementById("password").value;
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    document.getElementById("msg").innerText = error ? error.message : "✅ Logged in!";
+  }
+</script>
+</body>
+</html>
