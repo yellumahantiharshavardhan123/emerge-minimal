@@ -56,8 +56,10 @@
     if (error) {
       showMessage("Login error: " + error.message, true);
     } else {
-      showMessage("✅ Logged in successfully!");
-      // Redirect or load chat page here
+      showMessage("✅ Logged in successfully! Redirecting...");
+      setTimeout(() => {
+        window.location.href = "chat.html";
+      }, 1000);
     }
   }
 
