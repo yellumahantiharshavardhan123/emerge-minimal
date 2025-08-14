@@ -23,147 +23,177 @@
   </style>
 </head>
 <body>
-  <div class="container">
-    <!-- Auth Section -->
-    <div id="auth-section">
-      <h2>🔐 Login / Signup</h2>
-      <input type="email" id="email" placeholder="Email" />
-      <input type="password" id="password" placeholder="Password" />
-      <button id="signup-btn">Sign Up / Login</button>
-      <p id="auth-msg"></p>
-    </div>
-
-    <!-- Chat Section -->
-    <div id="chat-section" style="display:none;">
-      <div>
-        Logged in as: <span id="user-email"></span>
-        <button id="logout-btn">Logout</button>
-      </div>
-
-      <input type="email" id="friend-email" placeholder="Friend's email" />
-      <button id="start-chat-btn">Start Chat</button>
-
-      <div id="messages"></div>
-
-      <input type="text" id="new-message" placeholder="Type message..." disabled />
-      <button id="send-btn" disabled>Send</button>
-
-      <p id="chat-status-msg"></p>
-    </div>
+<div class="container">
+  <!-- Auth Section -->
+  <div id="auth-section">
+    <h2>🔐 Login / Signup</h2>
+    <input type="email" id="email" placeholder="Email" />
+    <input type="password" id="password" placeholder="Password" />
+    <button id="signup-btn">Sign Up / Login</button>
+    <p id="auth-msg"></p>
   </div>
 
+  <!-- Chat Section -->
+  <div id="chat-section" style="display:none;">
+    <div>
+      Logged in as: <span id="user-email"></span>
+      <button id="logout-btn">Logout</button>
+    </div>
+
+    <input type="email" id="friend-email" placeholder="Friend's email" />
+    <button id="start-chat-btn">Start Chat</button>
+
+    <div id="messages"></div>
+
+    <input type="text" id="new-message" placeholder="Type message..." disabled />
+    <button id="send-btn" disabled>Send</button>
+
+    <p id="chat-status-msg"></p>
+  </div>
+</div>
+
 <script>
-const SUPABASE_URL = "https://noqmpozmglkiprkakeab.supabase.co";
-const SUPABASE_KEY = "YOUR_ANON_KEY"; // Use anon key
-const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  // 🔑 Add your Supabase credentials here
+  const SUPABASE_URL = "https://<your-project-ref>.supabase.co"; // replace with your URL
+  const SUPABASE_ANON_KEY = "<your-anon-key>"; // replace with your anon key
+  const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-let currentUser = null;
-let chatFriend = null;
-let messagesSubscription = null;
+  let currentUser = null;
+  let chatFriend = null;
+  let messagesSubscription = null;
 
-const authSection = document.getElementById('auth-section');
-const chatSection = document.getElementById('chat-section');
-const authMsg = document.getElementById('auth-msg');
-const chatStatusMsg = document.getElementById('chat-status-msg');
+  const authSection = document.getElementById('auth-section');
+  const chatSection = document.getElementById('chat-section');
+  const authMsg = document.getElementById('auth-msg');
+  const chatStatusMsg = document.getElementById('chat-status-msg');
 
-function showAuthMessage(msg, isError=false){ authMsg.style.color = isError?'red':'green'; authMsg.innerText = msg; }
-function showChatStatus(msg, isError=false){ chatStatusMsg.style.color = isError?'red':'green'; chatStatusMsg.innerText = msg; }
-
-document.getElementById('signup-btn').onclick = async () => {
-  const email = document.getElementById('email').value.trim();
-  const password = document.getElementById('password').value;
-  if(!email || !password) return showAuthMessage("Enter email & password", true);
-
-  // Try login first
-  let { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
-
-  if(loginData?.user){
-    currentUser = loginData.user;
-    showAuthMessage("✅ Logged in!");
-  } else {
-    // If login failed, signup
-    const { data: signupData, error: signupError } = await supabase.auth.signUp({ email, password });
-    if(signupError) return showAuthMessage("Signup error: "+signupError.message, true);
-    currentUser = signupData.user;
-    showAuthMessage("✅ Signed up & logged in!");
+  function showAuthMessage(msg, isError = false){
+    authMsg.style.color = isError ? 'red':'green';
+    authMsg.innerText = msg;
+  }
+  function showChatStatus(msg, isError = false){
+    chatStatusMsg.style.color = isError ? 'red':'green';
+    chatStatusMsg.innerText = msg;
   }
 
-  // Ensure user exists in users table
-  await supabase.from('users').upsert([{ id: currentUser.id, email: currentUser.email }], { onConflict: 'id' });
-  openChat();
-};
+  // Signup/Login
+  document.getElementById('signup-btn').onclick = async () => {
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    if(!email || !password) return showAuthMessage("Enter email & password", true);
 
-function openChat(){
-  authSection.style.display='none';
-  chatSection.style.display='block';
-  document.getElementById('user-email').innerText = currentUser.email;
-}
+    const { data: signupData, error: signupError } = await supabase.auth.signUp({ email, password });
 
-// Logout
-document.getElementById('logout-btn').onclick = async () => {
-  await supabase.auth.signOut();
-  currentUser=null; chatFriend=null;
-  authSection.style.display='block'; chatSection.style.display='none';
-  authMsg.innerText=''; chatStatusMsg.innerText='';
-  clearChat();
-};
+    if(signupError && signupError.message.includes("already registered")){
+      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+      if(loginError) return showAuthMessage("Login error: "+loginError.message, true);
+      currentUser = loginData.user;
+      showAuthMessage("✅ Logged in!");
+      await ensureUserExists(currentUser.email);
+      openChat();
+    } else if(signupError){
+      showAuthMessage("Signup error: "+signupError.message, true);
+    } else {
+      currentUser = signupData.user;
+      showAuthMessage("✅ Signed up and logged in!");
+      await ensureUserExists(currentUser.email);
+      openChat();
+    }
+  };
 
-// Chat functions
-document.getElementById('start-chat-btn').onclick = async () => {
-  const friendEmail = document.getElementById('friend-email').value.trim().toLowerCase();
-  if(!friendEmail) return alert("Enter friend's email");
-  if(friendEmail===currentUser.email) return alert("Cannot chat with yourself");
+  // Ensure user exists in "users" table
+  async function ensureUserExists(email){
+    const { data } = await supabase.from('users').select('id').eq('email', email).single();
+    if(!data){
+      await supabase.from('users').insert([{ email }]);
+    }
+  }
 
-  const { data, error } = await supabase.from('users').select('id,email').eq('email', friendEmail).single();
-  if(error || !data) return alert("User not found");
+  function openChat(){
+    authSection.style.display='none';
+    chatSection.style.display='block';
+    document.getElementById('user-email').innerText = currentUser.email;
+  }
 
-  chatFriend = data;
-  enableChat(); loadMessages(); subscribeToMessages();
-};
+  // Logout
+  document.getElementById('logout-btn').onclick = async () => {
+    await supabase.auth.signOut();
+    currentUser = null; chatFriend = null;
+    authSection.style.display='block'; chatSection.style.display='none';
+    authMsg.innerText=''; chatStatusMsg.innerText='';
+    clearChat();
+  };
 
-function enableChat(){ document.getElementById('new-message').disabled=false; document.getElementById('send-btn').disabled=false; document.getElementById('messages').innerHTML=''; chatStatusMsg.innerText=''; }
-function clearChat(){ document.getElementById('friend-email').value=''; document.getElementById('new-message').value=''; document.getElementById('new-message').disabled=true; document.getElementById('send-btn').disabled=true; document.getElementById('messages').innerHTML=''; }
+  // Start chat
+  document.getElementById('start-chat-btn').onclick = async () => {
+    const friendEmail = document.getElementById('friend-email').value.trim().toLowerCase();
+    if(!friendEmail) return alert("Enter friend's email");
+    if(friendEmail === currentUser.email) return alert("Cannot chat with yourself");
 
-async function loadMessages(){
-  if(!chatFriend) return;
-  const { data, error } = await supabase.from('messages').select('*')
-    .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${chatFriend.id}),and(sender_id.eq.${chatFriend.id},receiver_id.eq.${currentUser.id})`)
-    .order('created_at',{ascending:true});
-  if(error) return showChatStatus("Error loading: "+error.message,true);
-  const messagesDiv = document.getElementById('messages');
-  messagesDiv.innerHTML=''; data.forEach(addMessageToDOM);
-}
+    const { data, error } = await supabase.from('users').select('id,email').eq('email', friendEmail).single();
+    if(error || !data) return alert("User not found");
 
-function subscribeToMessages(){
-  if(messagesSubscription) messagesSubscription.unsubscribe();
-  messagesSubscription = supabase.channel('public:messages')
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},payload=>{
-      const msg=payload.new;
-      if((msg.sender_id===currentUser.id && msg.receiver_id===chatFriend.id) || (msg.sender_id===chatFriend.id && msg.receiver_id===currentUser.id)) addMessageToDOM(msg);
-    }).subscribe();
-}
+    chatFriend = data;
+    enableChat();
+    loadMessages();
+    subscribeToMessages();
+  };
 
-function addMessageToDOM(msg){
-  const messagesDiv=document.getElementById('messages');
-  const div=document.createElement('div');
-  div.classList.add('message'); if(msg.sender_id===currentUser.id) div.classList.add('you');
-  const textDiv=document.createElement('div'); textDiv.classList.add('text'); textDiv.textContent=msg.content;
-  div.appendChild(textDiv); messagesDiv.appendChild(div); messagesDiv.scrollTop=messagesDiv.scrollHeight;
-}
+  function enableChat(){
+    document.getElementById('new-message').disabled=false;
+    document.getElementById('send-btn').disabled=false;
+    document.getElementById('messages').innerHTML='';
+    chatStatusMsg.innerText='';
+  }
 
-// Send message
-document.getElementById('send-btn').onclick = async () => {
-  const content = document.getElementById('new-message').value.trim();
-  if(!content) return;
-  const { error } = await supabase.from('messages').insert([{ sender_id: currentUser.id, receiver_id: chatFriend.id, content }]);
-  if(error) showChatStatus("Error sending: "+error.message,true); else document.getElementById('new-message').value='';
-};
+  function clearChat(){
+    document.getElementById('friend-email').value='';
+    document.getElementById('new-message').value='';
+    document.getElementById('new-message').disabled=true;
+    document.getElementById('send-btn').disabled=true;
+    document.getElementById('messages').innerHTML='';
+  }
 
-// Auto login if user already logged in
-window.onload = async ()=>{
-  const { data:{ user } } = await supabase.auth.getUser();
-  if(user){ currentUser=user; openChat(); }
-};
-</script>
-</body>
-</html>
+  // Load messages
+  async function loadMessages(){
+    if(!chatFriend) return;
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .or(`and(sender_email.eq.${currentUser.email},receiver_email.eq.${chatFriend.email}),and(sender_email.eq.${chatFriend.email},receiver_email.eq.${currentUser.email})`)
+      .order('created_at',{ascending:true});
+    if(error) return showChatStatus("Error loading: "+error.message,true);
+    const messagesDiv = document.getElementById('messages');
+    messagesDiv.innerHTML='';
+    data.forEach(addMessageToDOM);
+  }
+
+  // Realtime messages
+  function subscribeToMessages(){
+    if(messagesSubscription) messagesSubscription.unsubscribe();
+    messagesSubscription = supabase.channel('public:messages')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},payload=>{
+        const msg = payload.new;
+        if((msg.sender_email===currentUser.email && msg.receiver_email===chatFriend.email) ||
+           (msg.sender_email===chatFriend.email && msg.receiver_email===currentUser.email)){
+          addMessageToDOM(msg);
+        }
+      }).subscribe();
+  }
+
+  function addMessageToDOM(msg){
+    const messagesDiv = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.classList.add('message');
+    if(msg.sender_email===currentUser.email) div.classList.add('you');
+    const textDiv = document.createElement('div');
+    textDiv.classList.add('text');
+    textDiv.textContent = msg.content;
+    div.appendChild(textDiv);
+    messagesDiv.appendChild(div);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }
+
+  // Send message
+  document.getElementById('send-btn').onclick = async () => {
+    const content = document.getElementById('new-message').value
