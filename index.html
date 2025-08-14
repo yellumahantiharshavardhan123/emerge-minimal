@@ -54,7 +54,7 @@
 
 <script>
 const SUPABASE_URL = "https://noqmpozmglkiprkakeab.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vcW1wb3ptZ2xraXBya2FrZWFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5ODExNzksImV4cCI6MjA3MDU1NzE3OX0.rrwRu_BKxXQJE-X49ItQE5s8Q_vNaUiZz1-0wO_tEAY";
+const SUPABASE_KEY = "YOUR_ANON_KEY"; // Use anon key
 const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let currentUser = null;
@@ -66,134 +66,104 @@ const chatSection = document.getElementById('chat-section');
 const authMsg = document.getElementById('auth-msg');
 const chatStatusMsg = document.getElementById('chat-status-msg');
 
-function showAuthMessage(msg, isError = false){
-  authMsg.style.color = isError ? 'red':'green';
-  authMsg.innerText = msg;
-}
-function showChatStatus(msg, isError = false){
-  chatStatusMsg.style.color = isError ? 'red':'green';
-  chatStatusMsg.innerText = msg;
-}
+function showAuthMessage(msg, isError=false){ authMsg.style.color = isError?'red':'green'; authMsg.innerText = msg; }
+function showChatStatus(msg, isError=false){ chatStatusMsg.style.color = isError?'red':'green'; chatStatusMsg.innerText = msg; }
 
-// Signup/Login button
 document.getElementById('signup-btn').onclick = async () => {
   const email = document.getElementById('email').value.trim();
   const password = document.getElementById('password').value;
   if(!email || !password) return showAuthMessage("Enter email & password", true);
 
-  // Try signing up
-  const { data: signupData, error: signupError } = await supabase.auth.signUp({ email, password });
-  
-  if(signupError && signupError.message.includes("User already registered")){
-    // If user exists, login instead
-    const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
-    if(loginError) return showAuthMessage("Login error: "+loginError.message, true);
+  // Try login first
+  let { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+
+  if(loginData?.user){
     currentUser = loginData.user;
     showAuthMessage("✅ Logged in!");
-    await ensureUserExists(currentUser.email, currentUser.id);
-    openChat();
-  } else if(signupError){
-    showAuthMessage("Signup error: "+signupError.message, true);
   } else {
+    // If login failed, signup
+    const { data: signupData, error: signupError } = await supabase.auth.signUp({ email, password });
+    if(signupError) return showAuthMessage("Signup error: "+signupError.message, true);
     currentUser = signupData.user;
-    showAuthMessage("✅ Signed up! Logged in.");
-    await ensureUserExists(currentUser.email, currentUser.id);
-    openChat();
+    showAuthMessage("✅ Signed up & logged in!");
   }
+
+  // Ensure user exists in users table
+  await supabase.from('users').upsert([{ id: currentUser.id, email: currentUser.email }], { onConflict: 'id' });
+  openChat();
 };
 
-// Ensure user is in users table
-async function ensureUserExists(email, id){
-  const { data } = await supabase.from('users').select('id').eq('id', id).single();
-  if(!data){
-    await supabase.from('users').insert([{id, email}]);
-  }
-}
-
 function openChat(){
-  authSection.style.display = 'none';
-  chatSection.style.display = 'block';
+  authSection.style.display='none';
+  chatSection.style.display='block';
   document.getElementById('user-email').innerText = currentUser.email;
 }
 
 // Logout
 document.getElementById('logout-btn').onclick = async () => {
   await supabase.auth.signOut();
-  currentUser = null; chatFriend = null;
+  currentUser=null; chatFriend=null;
   authSection.style.display='block'; chatSection.style.display='none';
-  authMsg.innerText = ''; chatStatusMsg.innerText = '';
+  authMsg.innerText=''; chatStatusMsg.innerText='';
   clearChat();
 };
 
-// Start chat with friend
+// Chat functions
 document.getElementById('start-chat-btn').onclick = async () => {
   const friendEmail = document.getElementById('friend-email').value.trim().toLowerCase();
   if(!friendEmail) return alert("Enter friend's email");
-  if(friendEmail === currentUser.email) return alert("Cannot chat with yourself");
+  if(friendEmail===currentUser.email) return alert("Cannot chat with yourself");
 
   const { data, error } = await supabase.from('users').select('id,email').eq('email', friendEmail).single();
   if(error || !data) return alert("User not found");
 
   chatFriend = data;
-  enableChat();
-  loadMessages();
-  subscribeToMessages();
+  enableChat(); loadMessages(); subscribeToMessages();
 };
 
-function enableChat(){
-  document.getElementById('new-message').disabled = false;
-  document.getElementById('send-btn').disabled = false;
-  document.getElementById('messages').innerHTML = '';
-  chatStatusMsg.innerText = '';
-}
+function enableChat(){ document.getElementById('new-message').disabled=false; document.getElementById('send-btn').disabled=false; document.getElementById('messages').innerHTML=''; chatStatusMsg.innerText=''; }
+function clearChat(){ document.getElementById('friend-email').value=''; document.getElementById('new-message').value=''; document.getElementById('new-message').disabled=true; document.getElementById('send-btn').disabled=true; document.getElementById('messages').innerHTML=''; }
 
-function clearChat(){
-  document.getElementById('friend-email').value='';
-  document.getElementById('new-message').value='';
-  document.getElementById('new-message').disabled = true;
-  document.getElementById('send-btn').disabled = true;
-  document.getElementById('messages').innerHTML='';
-}
-
-// Load messages
 async function loadMessages(){
   if(!chatFriend) return;
-  const { data, error } = await supabase
-    .from('messages')
-    .select('*')
+  const { data, error } = await supabase.from('messages').select('*')
     .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${chatFriend.id}),and(sender_id.eq.${chatFriend.id},receiver_id.eq.${currentUser.id})`)
     .order('created_at',{ascending:true});
   if(error) return showChatStatus("Error loading: "+error.message,true);
   const messagesDiv = document.getElementById('messages');
-  messagesDiv.innerHTML='';
-  data.forEach(addMessageToDOM);
+  messagesDiv.innerHTML=''; data.forEach(addMessageToDOM);
 }
 
-// Subscribe realtime
 function subscribeToMessages(){
   if(messagesSubscription) messagesSubscription.unsubscribe();
   messagesSubscription = supabase.channel('public:messages')
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'}, payload=>{
-      const msg = payload.new;
-      if((msg.sender_id===currentUser.id && msg.receiver_id===chatFriend.id) ||
-         (msg.sender_id===chatFriend.id && msg.receiver_id===currentUser.id)){
-        addMessageToDOM(msg);
-      }
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},payload=>{
+      const msg=payload.new;
+      if((msg.sender_id===currentUser.id && msg.receiver_id===chatFriend.id) || (msg.sender_id===chatFriend.id && msg.receiver_id===currentUser.id)) addMessageToDOM(msg);
     }).subscribe();
 }
 
-// Add message to DOM
 function addMessageToDOM(msg){
-  const messagesDiv = document.getElementById('messages');
-  const div = document.createElement('div');
-  div.classList.add('message');
-  if(msg.sender_id===currentUser.id) div.classList.add('you');
-  const textDiv = document.createElement('div');
-  textDiv.classList.add('text');
-  textDiv.textContent = msg.content;
-  div.appendChild(textDiv);
-  messagesDiv.appendChild(div);
-  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  const messagesDiv=document.getElementById('messages');
+  const div=document.createElement('div');
+  div.classList.add('message'); if(msg.sender_id===currentUser.id) div.classList.add('you');
+  const textDiv=document.createElement('div'); textDiv.classList.add('text'); textDiv.textContent=msg.content;
+  div.appendChild(textDiv); messagesDiv.appendChild(div); messagesDiv.scrollTop=messagesDiv.scrollHeight;
 }
 
 // Send message
+document.getElementById('send-btn').onclick = async () => {
+  const content = document.getElementById('new-message').value.trim();
+  if(!content) return;
+  const { error } = await supabase.from('messages').insert([{ sender_id: currentUser.id, receiver_id: chatFriend.id, content }]);
+  if(error) showChatStatus("Error sending: "+error.message,true); else document.getElementById('new-message').value='';
+};
+
+// Auto login if user already logged in
+window.onload = async ()=>{
+  const { data:{ user } } = await supabase.auth.getUser();
+  if(user){ currentUser=user; openChat(); }
+};
+</script>
+</body>
+</html>
